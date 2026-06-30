@@ -9,7 +9,7 @@ email-validator==2.2.0
 
 # ---------------- MongoDB ----------------
 motor==3.6.0
-pymongo[srv]==4.8.0
+pymongo[srv]==4.9.2
 
 # ---------------- Authentication ----------------
 python-jose[cryptography]==3.3.0
