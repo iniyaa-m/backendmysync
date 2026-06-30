@@ -8,9 +8,9 @@ from app.utils.logger import logger
 _executor = ThreadPoolExecutor(max_workers=2)
 
 TONE_EMOTION_MAP = {
-    "POSITIVE": ("happy", "calm", 0.15),
-    "NEGATIVE": ("stressed", "stressed", 0.80),
-    "NEUTRAL":  ("neutral", "calm", 0.25),
+    "POSITIVE": ("happy",   "calm",     0.15),
+    "NEGATIVE": ("stressed","stressed", 0.80),
+    "NEUTRAL":  ("neutral", "calm",     0.25),
 }
 
 VOICE_RECOMMENDATIONS = {
@@ -30,7 +30,7 @@ def _transcribe_audio(audio_path: str) -> str:
         result = model.transcribe(audio_path, fp16=False)
         return result.get("text", "").strip()
     except Exception as e:
-        logger.warning(f"Whisper transcription failed: {e}")
+        logger.warning(f"Whisper unavailable: {e}")
         return ""
 
 
@@ -54,8 +54,19 @@ def _analyze_sentiment(text: str) -> dict:
             label = "NEUTRAL"
         return {"label": label, "score": result["score"]}
     except Exception as e:
-        logger.warning(f"Sentiment analysis failed: {e}")
-        return {"label": "NEUTRAL", "score": 0.5}
+        logger.warning(f"Sentiment analysis unavailable: {e}")
+
+    # Simple keyword fallback
+    lower = text.lower()
+    positive_words = {"good", "great", "happy", "love", "excellent", "amazing", "wonderful"}
+    negative_words = {"bad", "stress", "hate", "terrible", "awful", "fail", "difficult"}
+    pos = sum(1 for w in positive_words if w in lower)
+    neg = sum(1 for w in negative_words if w in lower)
+    if pos > neg:
+        return {"label": "POSITIVE", "score": 0.7}
+    if neg > pos:
+        return {"label": "NEGATIVE", "score": 0.7}
+    return {"label": "NEUTRAL", "score": 0.5}
 
 
 def _voice_pitch_analysis(audio_path: str) -> dict:
@@ -70,7 +81,7 @@ def _voice_pitch_analysis(audio_path: str) -> dict:
             tone = "stressed" if pitch_std > 80 else ("excited" if avg_pitch > 200 else "calm")
             return {"avg_pitch": avg_pitch, "pitch_std": pitch_std, "tone": tone}
     except Exception as e:
-        logger.warning(f"Pitch analysis failed: {e}")
+        logger.warning(f"Librosa pitch analysis unavailable: {e}")
     return {"avg_pitch": 150.0, "pitch_std": 30.0, "tone": "calm"}
 
 
@@ -86,7 +97,7 @@ def _full_voice_pipeline(audio_bytes: bytes, filename: str = "audio.wav") -> dic
 
         sentiment_label = sentiment_result["label"]
         emotion, base_tone, base_stress = TONE_EMOTION_MAP.get(sentiment_label, ("neutral", "calm", 0.25))
-        tone = pitch_result["tone"] if pitch_result else base_tone
+        tone = pitch_result.get("tone", base_tone)
 
         stress_score = base_stress
         if tone == "stressed":
@@ -104,7 +115,10 @@ def _full_voice_pipeline(audio_bytes: bytes, filename: str = "audio.wav") -> dic
             "recommendation": VOICE_RECOMMENDATIONS.get(emotion, "Keep going! 💪"),
         }
     finally:
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 async def analyze_voice_emotion(audio_bytes: bytes, filename: str = "audio.wav") -> dict:
@@ -119,7 +133,10 @@ async def analyze_audio_chunk(chunk: bytes) -> dict:
             tmp.write(chunk)
             tmp_path = tmp.name
         pitch_result = await loop.run_in_executor(_executor, _voice_pitch_analysis, tmp_path)
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
         tone = pitch_result.get("tone", "calm")
         emotion_map = {"calm": "neutral", "stressed": "stressed", "excited": "excited"}
         return {

@@ -7,7 +7,7 @@ from concurrent.futures import ThreadPoolExecutor
 
 from app.utils.logger import logger
 
-_executor = ThreadPoolExecutor(max_workers=4)
+_executor = ThreadPoolExecutor(max_workers=2)
 
 EMOTION_SCORES = {
     "happy":     {"stress": 0.10, "focus": 0.80},
@@ -46,7 +46,28 @@ DEEPFACE_MAP = {
 }
 
 
-def _analyze_with_deepface(img_array) -> dict:
+def _decode_image(image_bytes: bytes):
+    try:
+        import cv2
+        import numpy as np
+        nparr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+        if img is not None:
+            return img
+    except Exception:
+        pass
+    try:
+        from PIL import Image
+        import numpy as np
+        img_pil = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+        import cv2
+        return cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
+    except Exception as e:
+        logger.warning(f"Image decode failed: {e}")
+        return None
+
+
+def _analyze_with_deepface(img_array) -> Optional[dict]:
     try:
         from deepface import DeepFace
         result = DeepFace.analyze(img_array, actions=["emotion"], enforce_detection=False, silent=True)
@@ -58,11 +79,11 @@ def _analyze_with_deepface(img_array) -> dict:
         emotion = DEEPFACE_MAP.get(dominant, dominant)
         return {"emotion": emotion, "confidence": round(confidence, 3), "raw": emotions}
     except Exception as e:
-        logger.warning(f"DeepFace failed: {e}")
+        logger.warning(f"DeepFace unavailable: {e}")
         return None
 
 
-def _analyze_with_fer(img_array) -> dict:
+def _analyze_with_fer(img_array) -> Optional[dict]:
     try:
         from fer import FER
         detector = FER(mtcnn=False)
@@ -73,26 +94,14 @@ def _analyze_with_fer(img_array) -> dict:
             emotion = DEEPFACE_MAP.get(dominant.lower(), dominant.lower())
             return {"emotion": emotion, "confidence": round(emotions[dominant], 3), "raw": emotions}
     except Exception as e:
-        logger.warning(f"FER failed: {e}")
+        logger.warning(f"FER unavailable: {e}")
     return None
 
 
-def _decode_image(image_bytes: bytes):
-    import cv2
-    import numpy as np
-    from PIL import Image
-    nparr = np.frombuffer(image_bytes, np.uint8)
-    img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-    if img is None:
-        img_pil = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-        img = cv2.cvtColor(np.array(img_pil), cv2.COLOR_RGB2BGR)
-    return img
-
-
 def _analyze_sync(img_array) -> dict:
-    result = _analyze_with_deepface(img_array)
-    if not result:
-        result = _analyze_with_fer(img_array)
+    if img_array is None:
+        return {"emotion": "neutral", "confidence": 0.60, "raw": {}}
+    result = _analyze_with_deepface(img_array) or _analyze_with_fer(img_array)
     if not result:
         result = {"emotion": "neutral", "confidence": 0.60, "raw": {}}
     return result

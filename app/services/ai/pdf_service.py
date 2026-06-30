@@ -55,34 +55,53 @@ def _embed_and_store(doc_id: str, chunks: List[str]) -> bool:
 
         return True
     except Exception as e:
-        logger.error(f"Embedding failed: {e}")
-        return False
+        logger.warning(f"Vector embedding unavailable (faiss/sentence-transformers not installed): {e}")
+        # Fallback: store chunks in memory without embeddings
+        for i, chunk in enumerate(chunks):
+            _document_chunks[len(_document_chunks)] = {"doc_id": doc_id, "text": chunk}
+        return True
 
 
 def _search_similar(query: str, top_k: int = 5) -> List[dict]:
     global _vector_store
-    if not _vector_store or _vector_store.ntotal == 0:
-        return []
-    try:
-        from sentence_transformers import SentenceTransformer
-        import numpy as np
+    # Try FAISS vector search first
+    if _vector_store and _vector_store.ntotal > 0:
+        try:
+            from sentence_transformers import SentenceTransformer
+            import numpy as np
 
-        model = SentenceTransformer("all-MiniLM-L6-v2")
-        query_emb = model.encode([query]).astype(np.float32)
-        distances, indices = _vector_store.search(query_emb, min(top_k, _vector_store.ntotal))
+            model = SentenceTransformer("all-MiniLM-L6-v2")
+            query_emb = model.encode([query]).astype(np.float32)
+            distances, indices = _vector_store.search(query_emb, min(top_k, _vector_store.ntotal))
 
-        results = []
-        for dist, idx in zip(distances[0], indices[0]):
-            if idx in _document_chunks:
-                results.append({
-                    "text": _document_chunks[idx]["text"],
-                    "doc_id": _document_chunks[idx]["doc_id"],
-                    "score": float(1 / (1 + dist)),
-                })
-        return sorted(results, key=lambda x: x["score"], reverse=True)
-    except Exception as e:
-        logger.error(f"FAISS search failed: {e}")
+            results = []
+            for dist, idx in zip(distances[0], indices[0]):
+                if idx in _document_chunks:
+                    results.append({
+                        "text": _document_chunks[idx]["text"],
+                        "doc_id": _document_chunks[idx]["doc_id"],
+                        "score": float(1 / (1 + dist)),
+                    })
+            return sorted(results, key=lambda x: x["score"], reverse=True)
+        except Exception as e:
+            logger.warning(f"FAISS search unavailable: {e}")
+
+    # Keyword fallback
+    if not _document_chunks:
         return []
+    query_words = set(query.lower().split())
+    scored = []
+    for idx, chunk_data in _document_chunks.items():
+        chunk_words = set(chunk_data["text"].lower().split())
+        overlap = len(query_words & chunk_words)
+        if overlap > 0:
+            scored.append({
+                "text": chunk_data["text"],
+                "doc_id": chunk_data["doc_id"],
+                "score": overlap / max(len(query_words), 1),
+            })
+    scored.sort(key=lambda x: x["score"], reverse=True)
+    return scored[:top_k]
 
 
 async def process_pdf(pdf_bytes: bytes) -> dict:
@@ -107,7 +126,10 @@ async def rag_query(query: str, doc_ids: Optional[List[str]] = None, language: s
         sources = [s for s in sources if s["doc_id"] in doc_ids]
 
     if not sources:
-        return {"answer": "No relevant content found. Please upload related documents first.", "sources": [], "confidence": 0.0}
+        return {
+            "answer": "No relevant content found. Please upload related documents first.",
+            "sources": [], "confidence": 0.0,
+        }
 
     context = "\n\n".join([f"Source {i+1}: {s['text']}" for i, s in enumerate(sources[:3])])
 
