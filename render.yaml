@@ -1,0 +1,35 @@
+services:
+  - type: web
+    name: mindsync-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: APP_NAME
+        value: MindSync AI Classroom
+      - key: APP_VERSION
+        value: 1.0.0
+      - key: DEBUG
+        value: false
+      - key: ALGORITHM
+        value: HS256
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: REFRESH_TOKEN_EXPIRE_DAYS
+        value: 7
+      - key: MONGODB_DB_NAME
+        value: sync
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+      - key: GROQ_FALLBACK_MODEL
+        value: llama-3.1-8b-instant
+      - key: RATE_LIMIT_PER_MINUTE
+        value: 60
+      # Set these manually in Render dashboard (sensitive):
+      # SECRET_KEY
+      # MONGODB_URL
+      # GROQ_API_KEY
+      # HUGGINGFACE_API_KEY
+      # FRONTEND_URL
+      # ALLOWED_ORIGINS

@@ -1,0 +1,49 @@
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Env — NEVER commit this
+.env
+.env.*
+!.env.example
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+mindsync.db*
+
+# Uploads
+uploads/
+
+# Coverage
+.coverage
+coverage_report/
+htmlcov/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Logs
+*.log
+logs/
+verbose_out.txt
+verbose_err.txt
+
+# Firebase credentials
+firebase-credentials.json
+
+# ML Models cache
+.deepface/
+.cache/
